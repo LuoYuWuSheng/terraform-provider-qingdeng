@@ -68,7 +68,7 @@ var (
 )
 
 func (p *RelytProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
-	resp.TypeName = "relyt"
+	resp.TypeName = "qingdeng"
 	resp.Version = p.version
 }
 
