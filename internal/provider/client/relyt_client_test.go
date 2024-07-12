@@ -5,40 +5,44 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/hashicorp/go-hclog"
+	"net/url"
 	"strconv"
 	"testing"
 )
 
-var client = NewRelytClient(host, auth, role)
+var (
+	client, _ = NewRelytClient(RelytClientConfig{ApiHost: host, AuthKey: auth, Role: role})
+	ctx       = context.WithValue(context.Background(), "provider", hclog.NewInterceptLogger)
+)
 
 const (
-	host = "http://120.92.213.241:8080"
-	auth = "9a3727e5b9c0ddabaGbll2HVLVKLLY1AyjOilAqeyPOBAb74A7VlJRAdTi0bJWJd"
-	role = "343842875420708874"
+	host   = "http://120.92.213.241:8080"
+	auth   = "9a3727e5b9c0ddabaGbll2HVLVKLLY1AyjOilAqeyPOBAb74A7VlJRAdTi0bJWJd"
+	role   = "343842875420708874"
+	region = "http://120.92.110.101:80"
 )
 
 func TestCreateDwsu(t *testing.T) {
-	client := NewRelytClient(host, auth, role)
 	ctx := context.WithValue(context.Background(), "provider", hclog.NewInterceptLogger)
 	request := DwsuModel{
 		Alias:  "qingdeng-test",
 		Domain: "qqqq-tst",
-		Variant: Variant{
+		Variant: &Variant{
 			ID: "basic",
 		},
-		DefaultDps: DpsMode{
+		DefaultDps: &DpsMode{
 			Name:        "hybrid",
 			Description: "qingdeng-test",
 			Engine:      "hybrid",
-			Spec: Spec{
+			Spec: &Spec{
 				ID: 2,
 			},
 		},
-		Edition: Edition{
+		Edition: &Edition{
 			ID: "standard",
 		},
-		Region: Region{
-			Cloud: Cloud{
+		Region: &Region{
+			Cloud: &Cloud{
 				ID: "ksc",
 			},
 			ID: "beijing-cicd",
@@ -63,7 +67,6 @@ func TestListSpec(t *testing.T) {
 }
 
 func TestListDwsu(t *testing.T) {
-	client := NewRelytClient(host, auth, role)
 	ctx := context.WithValue(context.Background(), "provider", hclog.NewInterceptLogger)
 	response, err := client.ListDwsu(ctx, 100, 1)
 	marshal, _ := json.Marshal(response)
@@ -72,7 +75,6 @@ func TestListDwsu(t *testing.T) {
 }
 
 func TestDeleteDwsu(t *testing.T) {
-	client := NewRelytClient(host, auth, role)
 	ctx := context.WithValue(context.Background(), "provider", hclog.NewInterceptLogger)
 	err := client.DropDwsu(ctx, "4679216502528")
 	if err != nil {
@@ -80,31 +82,70 @@ func TestDeleteDwsu(t *testing.T) {
 	}
 }
 
-func TestTimeOutRead(t *testing.T) {
-	client := NewRelytClient(host, auth, role)
+func TestDeleteDps(t *testing.T) {
 	ctx := context.WithValue(context.Background(), "provider", hclog.NewInterceptLogger)
-	resp, err := client.TimeOutTask(3, func() (any, error) {
-		return client.GetDwsuByAlias(ctx, "bar")
-	})
+	err := client.DropEdps(ctx, region, "4679367072512", "4679367072512-1472")
 	if err != nil {
 		fmt.Println(fmt.Sprintf("drop dwsu%s", err.Error()))
-	}
-	if resp != nil {
-		model := resp.(*DwsuModel)
-		marshal, err := json.Marshal(model)
-		if err != nil {
-			fmt.Println(fmt.Sprintf("json %s", err.Error()))
-		}
-		fmt.Println(string(marshal))
 	}
 }
 
-func TestGetDwsu(t *testing.T) {
-	client := NewRelytClient(host, auth, role)
-	ctx := context.WithValue(context.Background(), "provider", hclog.NewInterceptLogger)
-	mode, err := client.GetDwsu(ctx, "4679216502528")
+func TestPath(t *testing.T) {
+	//path := client.ApiHost + "/qingdeng@zbyte-inc.com"
+	path := client.ApiHost + "/中午@zbyte-inc.com"
+	escape := url.PathEscape(path)
+	fmt.Println(escape)
+}
+
+func TestCreateAccount(t *testing.T) {
+	client.RegionApi = region
+	account, err := client.CreateAccount(ctx, "", "4679350645248", Account{
+		InitPassword: "zZefE#12344R*",
+		Name:         "edit123",
+	})
 	if err != nil {
-		fmt.Println(fmt.Sprintf("drop dwsu%s", err.Error()))
+		println("create account: " + err.Error())
+		return
+	}
+	marshal, err := json.Marshal(account)
+	fmt.Println("create result: " + string(marshal))
+}
+
+func TestDropAccount(t *testing.T) {
+	client.RegionApi = region
+	err := client.DropAccount(ctx, region, "4679367072512", "demo3")
+	if err != nil {
+		println("delete account: " + err.Error())
+		return
+	}
+}
+
+func TestGetOpenApiMeta(t *testing.T) {
+	ctx := context.WithValue(context.Background(), "provider", hclog.NewInterceptLogger)
+	//client.ApiHost = "http://k8s-zbyteapp-bluewhal-254555b2ab-f9c4321b7ca3d6b0.elb.ap-east-1.amazonaws.com"
+	client.ApiHost = "http://120.92.213.241:8080"
+	//client.AuthKey = "801b901dce1a98f2QCH6yiakoTAVMgF0ssLc2tjvJ5duk0s5sa4j919DIBfkiCxd"
+	client.AuthKey = "9a3727e5b9c0ddabaGbll2HVLVKLLY1AyjOilAqeyPOBAb74A7VlJRAdTi0bJWJd"
+	//client.Role = ""
+	//meta, err := client.GetOpenApiMeta(ctx, "aws", "ap-east-1")
+	meta, err := client.GetOpenApiMeta(ctx, "ksc", "beijing-cicd")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("get dwsu%s", err.Error()))
+	}
+	marshal, err := json.Marshal(meta)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("err get %s", err.Error()))
+		return
+	}
+	fmt.Println(fmt.Sprintf("get dwsu%s", string(marshal)))
+
+}
+
+func TestGetDwsu(t *testing.T) {
+	ctx := context.WithValue(context.Background(), "provider", hclog.NewInterceptLogger)
+	mode, err := client.GetDwsu(ctx, "4677306879744")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("get dwsu%s", err.Error()))
 	}
 	marshal, err := json.Marshal(mode)
 	if err != nil {
@@ -112,4 +153,31 @@ func TestGetDwsu(t *testing.T) {
 		return
 	}
 	fmt.Println(fmt.Sprintf("get dwsu%s", string(marshal)))
+}
+
+func TestGetDwsuApiMeta(t *testing.T) {
+	mode, err := client.GetDwsuOpenApiMeta(ctx, "4677306879744")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("get api meta%s", err.Error()))
+	}
+	marshal, err := json.Marshal(mode)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("err get %s", err.Error()))
+		return
+	}
+	fmt.Println(fmt.Sprintf("get api meta %s", string(marshal)))
+}
+
+func TestGetDps(t *testing.T) {
+	ctx := context.WithValue(context.Background(), "provider", hclog.NewInterceptLogger)
+	mode, err := client.GetDps(ctx, "http://120.92.110.101:80", "4679350645248", "4679350645248-1458")
+	if err != nil {
+		fmt.Println(fmt.Sprintf("get dps error %s", err.Error()))
+	}
+	marshal, err := json.Marshal(mode)
+	if err != nil {
+		fmt.Println(fmt.Sprintf("err get %s", err.Error()))
+		return
+	}
+	fmt.Println(fmt.Sprintf("get dps %s", string(marshal)))
 }

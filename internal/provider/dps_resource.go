@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"terraform-provider-relyt/internal/provider/client"
-	"time"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -38,11 +37,14 @@ func (r *dpsResource) Metadata(_ context.Context, req resource.MetadataRequest, 
 func (r *dpsResource) Schema(_ context.Context, _ resource.SchemaRequest, resp *resource.SchemaResponse) {
 	resp.Schema = schema.Schema{
 		Attributes: map[string]schema.Attribute{
-			"dwsu":        schema.ObjectAttribute{Computed: true},
+			"dwsu_id":     schema.StringAttribute{Required: true},
 			"name":        schema.StringAttribute{Required: true},
-			"description": schema.StringAttribute{Required: true},
+			"id":          schema.StringAttribute{Computed: true},
+			"description": schema.StringAttribute{Optional: true},
 			"engine":      schema.StringAttribute{Required: true},
-			"size":        schema.Int64Attribute{Required: true},
+			"size":        schema.StringAttribute{Required: true},
+			//"last_updated": schema.StringAttribute{Computed: true},
+			//"status":       schema.StringAttribute{Computed: true},
 		},
 	}
 }
@@ -56,17 +58,21 @@ func (r *dpsResource) Create(ctx context.Context, req resource.CreateRequest, re
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	meta := RouteRegionUri(ctx, dpsModel.DwsuId.ValueString(), r.client, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	regionUri := meta.URI
 	relytDps := client.DpsMode{
 		Description: dpsModel.Description.ValueString(),
 		Engine:      dpsModel.Engine.ValueString(),
 		Name:        dpsModel.Name.ValueString(),
-		Spec: client.Spec{
-			ID: dpsModel.Size.ValueInt64(),
+		Spec: &client.Spec{
+			Name: dpsModel.Size.ValueString(),
 		},
 	}
-
 	// Create new order
-	createResult, err := r.client.CreateEdps(ctx, dpsModel.Dwsu.ID.ValueString(), relytDps)
+	createResult, err := r.client.CreateEdps(ctx, regionUri, dpsModel.DwsuId.ValueString(), relytDps)
 	if err != nil || createResult.Code != 200 {
 		resp.Diagnostics.AddError(
 			"Error creating dps",
@@ -74,8 +80,25 @@ func (r *dpsResource) Create(ctx context.Context, req resource.CreateRequest, re
 		)
 		return
 	}
+	if createResult.Data == nil {
+		resp.Diagnostics.AddError(
+			"Error creating dps",
+			"Could not get dps id, after create!",
+		)
+		return
+	}
+	dpsModel.ID = types.StringValue(*createResult.Data)
 	queryDpsMode, err := r.client.TimeOutTask(600, func() (any, error) {
-		return r.client.GetDps(ctx, dpsModel.Dwsu.ID.ValueString(), createResult.Data)
+		dps, err2 := r.client.GetDps(ctx, regionUri, dpsModel.DwsuId.ValueString(), *createResult.Data)
+		if err2 != nil || dps == nil {
+			//这里判断是否要充实
+			return dps, err2
+		}
+		//todo 这里，要不要判断defaultDps状态
+		if dps.Status == client.DWSU_STATUS_READY {
+			return dps, nil
+		}
+		return dps, fmt.Errorf("dwsu is not Ready")
 	})
 	if err != nil {
 		tflog.Error(ctx, "error wait dps ready"+err.Error())
@@ -89,12 +112,12 @@ func (r *dpsResource) Create(ctx context.Context, req resource.CreateRequest, re
 	relytQueryModel := queryDpsMode.(*client.DpsMode)
 	tflog.Info(ctx, "bizId:"+relytQueryModel.ID)
 	// 将毫秒转换为秒和纳秒
-	seconds := relytQueryModel.UpdateTime / 1000
-	nanoseconds := (relytQueryModel.UpdateTime % 1000) * int64(time.Millisecond)
+	//seconds := relytQueryModel.UpdateTime / 1000
+	//nanoseconds := (relytQueryModel.UpdateTime % 1000) * int64(time.Millisecond)
 
 	// 使用 time.Unix 函数创建 time.Time 对象
-	t := time.Unix(seconds, nanoseconds)
-	dpsModel.LastUpdated = types.StringValue(t.Format(time.RFC850))
+	//t := time.Unix(seconds, nanoseconds)
+	//dpsModel.LastUpdated = types.StringValue(t.Format(time.RFC850))
 
 	// Set state to fully populated data
 	diags = resp.State.Set(ctx, dpsModel)
@@ -102,24 +125,32 @@ func (r *dpsResource) Create(ctx context.Context, req resource.CreateRequest, re
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	tflog.Info(ctx, "create dps succ !"+relytQueryModel.ID)
 }
 
 // Read resource information.
 func (r *dpsResource) Read(ctx context.Context, req resource.ReadRequest, resp *resource.ReadResponse) {
 	// Get current state
-	var state DwsuModel
+	var state DpsModel
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	dwsu, err := r.client.GetDwsu(ctx, state.ID.ValueString())
-	if err != nil {
-		tflog.Error(ctx, "error read dwsu"+err.Error())
+	meta := RouteRegionUri(ctx, state.DwsuId.ValueString(), r.client, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
 		return
 	}
-	state.Alias = types.StringValue(dwsu.Alias)
+	regionUri := meta.URI
+	_, err := r.client.GetDps(ctx, regionUri, state.DwsuId.ValueString(), state.ID.ValueString())
+	if err != nil {
+		tflog.Error(ctx, "error read dps"+err.Error())
+		return
+	}
+	//state.Status = types.StringValue(dps.Status)
 	// Set refreshed state
+	//尝试修改其中某些属性，看terraform行为
+	//state.Description = types.StringValue("change desc")
 	diags = resp.State.Set(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -130,24 +161,52 @@ func (r *dpsResource) Read(ctx context.Context, req resource.ReadRequest, resp *
 
 // Update updates the resource and sets the updated Terraform state on success.
 func (r *dpsResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	resp.Diagnostics.AddError("not support", "update dps not supported")
+	return
 }
 
 // Delete deletes the resource and removes the Terraform state on success.
 func (r *dpsResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	// Retrieve values from state
-	var state client.DwsuModel
+	var state DpsModel
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
 
-	// Delete existing order
-	err := r.client.DropDwsu(ctx, state.ID)
+	meta := RouteRegionUri(ctx, state.DwsuId.ValueString(), r.client, &resp.Diagnostics)
+	if resp.Diagnostics.HasError() {
+		return
+	}
+	regionUri := meta.URI
+
+	// fixme 这里只要我删除，再读立刻为null了。。这样无法等待edps删除完成
+	err := r.client.DropEdps(ctx, regionUri, state.DwsuId.ValueString(), state.ID.ValueString())
 	if err != nil {
+		tflog.Error(ctx, "error delete dps "+err.Error())
 		resp.Diagnostics.AddError(
-			"Error Deleting HashiCups Order",
-			"Could not delete order, unexpected error: "+err.Error(),
+			"Error Deleting dps ",
+			"Could not delete dps, unexpected error: "+err.Error(),
+		)
+		return
+	}
+	_, err = r.client.TimeOutTask(600, func() (any, error) {
+		dps, err2 := r.client.GetDps(ctx, regionUri, state.DwsuId.ValueString(), state.ID.ValueString())
+		if err2 != nil {
+			//这里判断是否要重试
+			return dps, err2
+		}
+		if dps == nil || dps.Status == client.DWSU_STATUS_DROPPED {
+			return dps, nil
+		}
+		return dps, fmt.Errorf("wait delete dps timeout ")
+	})
+	if err != nil {
+		tflog.Error(ctx, "error wait dps delete "+err.Error())
+		resp.Diagnostics.AddError(
+			"Error Deleting dps ",
+			"Could not delete dps, unexpected error: "+err.Error(),
 		)
 		return
 	}

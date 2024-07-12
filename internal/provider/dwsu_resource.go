@@ -9,7 +9,6 @@ import (
 	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
 	"terraform-provider-relyt/internal/provider/client"
-	"time"
 )
 
 // Ensure the implementation satisfies the expected interfaces.
@@ -40,16 +39,21 @@ func (r *dwsuResource) Schema(_ context.Context, _ resource.SchemaRequest, resp 
 		Attributes: map[string]schema.Attribute{
 			"id":        schema.StringAttribute{Computed: true},
 			"cloud":     schema.StringAttribute{Required: true},
+			"domain":    schema.StringAttribute{Required: true},
+			"variant":   schema.StringAttribute{Computed: true},
+			"edition":   schema.StringAttribute{Computed: true},
 			"region":    schema.StringAttribute{Required: true},
 			"dwsu_type": schema.StringAttribute{Required: true},
 			"alias":     schema.StringAttribute{Optional: true},
-			"defaultDps": schema.SingleNestedAttribute{
+			//"last_updated": schema.Int64Attribute{Computed: true},
+			//"status":       schema.StringAttribute{Computed: true},
+			"default_dps": schema.SingleNestedAttribute{
 				Required: true,
 				Attributes: map[string]schema.Attribute{
 					"name":        schema.StringAttribute{Required: true},
 					"description": schema.StringAttribute{Optional: true},
 					"engine":      schema.StringAttribute{Required: true},
-					"size":        schema.Int64Attribute{Required: true},
+					"size":        schema.StringAttribute{Required: true},
 				},
 			},
 		},
@@ -62,20 +66,26 @@ func (r *dwsuResource) Create(ctx context.Context, req resource.CreateRequest, r
 	var dwsuModel DwsuModel
 	diags := req.Plan.Get(ctx, &dwsuModel)
 	resp.Diagnostics.Append(diags...)
+	dwsuModel.Variant = types.StringValue("basic")
+	dwsuModel.Edition = types.StringValue("standard")
 	if resp.Diagnostics.HasError() {
 		return
 	}
 	relytDwsu := client.DwsuModel{
-		DefaultDps: client.DpsMode{
+		DefaultDps: &client.DpsMode{
 			Description: dwsuModel.DefaultDps.Description.ValueString(),
 			Engine:      dwsuModel.DefaultDps.Engine.ValueString(),
 			Name:        dwsuModel.DefaultDps.Name.ValueString(),
-			Spec: client.Spec{
-				ID: dwsuModel.DefaultDps.Size.ValueInt64(),
+			Spec: &client.Spec{
+				Name: dwsuModel.DefaultDps.Size.ValueString(),
 			},
 		},
-		Region: client.Region{
-			Cloud: client.Cloud{
+		Domain:  dwsuModel.Domain.ValueString(),
+		Alias:   dwsuModel.Alias.ValueString(),
+		Variant: &client.Variant{ID: dwsuModel.Variant.ValueString()},
+		Edition: &client.Edition{ID: dwsuModel.Edition.ValueString()},
+		Region: &client.Region{
+			Cloud: &client.Cloud{
 				ID: dwsuModel.Cloud.ValueString(),
 			},
 			ID: dwsuModel.Region.ValueString(),
@@ -91,8 +101,25 @@ func (r *dwsuResource) Create(ctx context.Context, req resource.CreateRequest, r
 		)
 		return
 	}
+	if createResult.Data == nil {
+		resp.Diagnostics.AddError(
+			"Error creating dwsu",
+			"Could not get dwsu id, after create!",
+		)
+		return
+	}
+	dwsuModel.ID = types.StringValue(*createResult.Data)
 	queryDwsuModel, err := r.client.TimeOutTask(600, func() (any, error) {
-		return r.client.GetDwsuByAlias(ctx, dwsuModel.Alias.ValueString())
+		dwsu, err2 := r.client.GetDwsu(ctx, *createResult.Data)
+		if err2 != nil || dwsu == nil {
+			//这里判断是否要充实
+			return dwsu, err2
+		}
+		//todo 不判断defaultDps状态,读接口没返回这个状态
+		if dwsu.Status == client.DWSU_STATUS_READY {
+			return dwsu, nil
+		}
+		return dwsu, fmt.Errorf("dwsu is not Ready")
 	})
 	if err != nil {
 		tflog.Error(ctx, "error wait dwsu ready"+err.Error())
@@ -101,14 +128,15 @@ func (r *dwsuResource) Create(ctx context.Context, req resource.CreateRequest, r
 	}
 	relytQueryModel := queryDwsuModel.(*client.DwsuModel)
 	tflog.Info(ctx, "bizId:"+relytQueryModel.ID)
-	dwsuModel.LastUpdated = types.StringValue(time.Now().Format(time.RFC850))
-
+	//dwsuModel.LastUpdated = types.Int64Value(time.Now().UnixMilli())
+	//dwsuModel.Status = types.StringValue(relytQueryModel.Status)
 	// Set state to fully populated data
 	diags = resp.State.Set(ctx, dwsuModel)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
+	tflog.Info(ctx, "create dwsu success: "+relytQueryModel.ID)
 }
 
 // Read resource information.
@@ -120,29 +148,31 @@ func (r *dwsuResource) Read(ctx context.Context, req resource.ReadRequest, resp 
 	if resp.Diagnostics.HasError() {
 		return
 	}
-	dwsu, err := r.client.GetDwsu(ctx, state.ID.ValueString())
+	_, err := r.client.GetDwsu(ctx, state.ID.ValueString())
 	if err != nil {
 		tflog.Error(ctx, "error read dwsu"+err.Error())
 		return
 	}
-	state.Alias = types.StringValue(dwsu.Alias)
+	//state.Status = types.StringValue(dwsu.Status)
 	// Set refreshed state
 	diags = resp.State.Set(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
 		return
 	}
-
+	tflog.Info(ctx, "read dwsu succ : "+state.ID.ValueString())
 }
 
 // Update updates the resource and sets the updated Terraform state on success.
 func (r *dwsuResource) Update(ctx context.Context, req resource.UpdateRequest, resp *resource.UpdateResponse) {
+	resp.Diagnostics.AddError("not support", "update dwsu not supported")
+	return
 }
 
 // Delete deletes the resource and removes the Terraform state on success.
 func (r *dwsuResource) Delete(ctx context.Context, req resource.DeleteRequest, resp *resource.DeleteResponse) {
 	// Retrieve values from state
-	var state client.DwsuModel
+	var state DwsuModel
 	diags := req.State.Get(ctx, &state)
 	resp.Diagnostics.Append(diags...)
 	if resp.Diagnostics.HasError() {
@@ -150,14 +180,28 @@ func (r *dwsuResource) Delete(ctx context.Context, req resource.DeleteRequest, r
 	}
 
 	// Delete existing order
-	err := r.client.DropDwsu(ctx, state.ID)
+	err := r.client.DropDwsu(ctx, state.ID.ValueString())
 	if err != nil {
-		resp.Diagnostics.AddError(
-			"Error Deleting HashiCups Order",
-			"Could not delete order, unexpected error: "+err.Error(),
+		//要不要加error
+		resp.Diagnostics.AddWarning(
+			"Error Deleting dwsu",
+			"Could not delete dwsu, unexpected error: "+err.Error(),
 		)
-		return
+		//return
 	}
+	//等待删除完成
+	_, err = r.client.TimeOutTask(600, func() (any, error) {
+		dwsu, err2 := r.client.GetDwsu(ctx, state.ID.ValueString())
+		if err2 != nil || dwsu == nil {
+			//这里判断是否要充实
+			return dwsu, err2
+		}
+		if dwsu == nil || dwsu.Status == client.DWSU_STATUS_DROPPED {
+			return dwsu, nil
+		}
+		return dwsu, fmt.Errorf("wait delete dwsu timeout ")
+	})
+	return
 }
 
 // Configure adds the provider configured client to the resource.

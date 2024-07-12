@@ -9,7 +9,7 @@ terraform {
 provider "relyt" {
   api_host = "http://localhost:19090"
   auth_key = "education"
-  role_id = "test123"
+  role_id  = "test123"
 }
 
 #data "hashicups_example" "edu" {}
@@ -26,12 +26,12 @@ resource "relyt_order" "order" {
       id = 3
     }
     quantity = 2
-  }, {
+    }, {
     coffee = {
       id = 1
     }
     quantity = 2
-  }
+    }
   ]
 }
 
