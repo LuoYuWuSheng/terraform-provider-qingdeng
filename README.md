@@ -1,64 +1,107 @@
-# Terraform Provider Scaffolding (Terraform Plugin Framework)
+# Terraform Provider Relyt 
 
-_This template repository is built on the [Terraform Plugin Framework](https://github.com/hashicorp/terraform-plugin-framework). The template repository built on the [Terraform Plugin SDK](https://github.com/hashicorp/terraform-plugin-sdk) can be found at [terraform-provider-scaffolding](https://github.com/hashicorp/terraform-provider-scaffolding). See [Which SDK Should I Use?](https://developer.hashicorp.com/terraform/plugin/framework-benefits) in the Terraform documentation for additional information._
+```
+example：
 
-This repository is a *template* for a [Terraform](https://www.terraform.io) provider. It is intended as a starting point for creating Terraform providers, containing:
-
-- A resource and a data source (`internal/provider/`),
-- Examples (`examples/`) and generated documentation (`docs/`),
-- Miscellaneous meta files.
-
-These files contain boilerplate code that you will need to edit to create your own Terraform provider. Tutorials for creating Terraform providers can be found on the [HashiCorp Developer](https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework) platform. _Terraform Plugin Framework specific guides are titled accordingly._
-
-Please see the [GitHub template repository documentation](https://help.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template) for how to create a new repository from this template on GitHub.
-
-Once you've written your provider, you'll want to [publish it on the Terraform Registry](https://developer.hashicorp.com/terraform/registry/providers/publishing) so that others can use it.
-
-## Requirements
-
-- [Terraform](https://developer.hashicorp.com/terraform/downloads) >= 1.0
-- [Go](https://golang.org/doc/install) >= 1.21
-
-## Building The Provider
-
-1. Clone the repository
-1. Enter the repository directory
-1. Build the provider using the Go `install` command:
-
-```shell
-go install
 ```
 
-## Adding Dependencies
+[//]: # ()
+[//]: # (_This template repository is built on the [Terraform Plugin Framework]&#40;https://github.com/hashicorp/terraform-plugin-framework&#41;. The template repository built on the [Terraform Plugin SDK]&#40;https://github.com/hashicorp/terraform-plugin-sdk&#41; can be found at [terraform-provider-scaffolding]&#40;https://github.com/hashicorp/terraform-provider-scaffolding&#41;. See [Which SDK Should I Use?]&#40;https://developer.hashicorp.com/terraform/plugin/framework-benefits&#41; in the Terraform documentation for additional information._)
 
-This provider uses [Go modules](https://github.com/golang/go/wiki/Modules).
-Please see the Go documentation for the most up to date information about using Go modules.
+[//]: # ()
+[//]: # (This repository is a *template* for a [Terraform]&#40;https://www.terraform.io&#41; provider. It is intended as a starting point for creating Terraform providers, containing:)
 
-To add a new dependency `github.com/author/dependency` to your Terraform provider:
+[//]: # ()
+[//]: # (- A resource and a data source &#40;`internal/provider/`&#41;,)
 
-```shell
-go get github.com/author/dependency
-go mod tidy
-```
+[//]: # (- Examples &#40;`examples/`&#41; and generated documentation &#40;`docs/`&#41;,)
 
-Then commit the changes to `go.mod` and `go.sum`.
+[//]: # (- Miscellaneous meta files.)
 
-## Using the provider
+[//]: # ()
+[//]: # (These files contain boilerplate code that you will need to edit to create your own Terraform provider. Tutorials for creating Terraform providers can be found on the [HashiCorp Developer]&#40;https://developer.hashicorp.com/terraform/tutorials/providers-plugin-framework&#41; platform. _Terraform Plugin Framework specific guides are titled accordingly._)
 
-Fill this in for each provider
+[//]: # ()
+[//]: # (Please see the [GitHub template repository documentation]&#40;https://help.github.com/en/github/creating-cloning-and-archiving-repositories/creating-a-repository-from-a-template&#41; for how to create a new repository from this template on GitHub.)
 
-## Developing the Provider
+[//]: # ()
+[//]: # (Once you've written your provider, you'll want to [publish it on the Terraform Registry]&#40;https://developer.hashicorp.com/terraform/registry/providers/publishing&#41; so that others can use it.)
 
-If you wish to work on the provider, you'll first need [Go](http://www.golang.org) installed on your machine (see [Requirements](#requirements) above).
+[//]: # ()
+[//]: # (## Requirements)
 
-To compile the provider, run `go install`. This will build the provider and put the provider binary in the `$GOPATH/bin` directory.
+[//]: # ()
+[//]: # (- [Terraform]&#40;https://developer.hashicorp.com/terraform/downloads&#41; >= 1.0)
 
-To generate or update documentation, run `go generate`.
+[//]: # (- [Go]&#40;https://golang.org/doc/install&#41; >= 1.21)
 
-In order to run the full suite of Acceptance tests, run `make testacc`.
+[//]: # ()
+[//]: # (## Building The Provider)
 
-*Note:* Acceptance tests create real resources, and often cost money to run.
+[//]: # ()
+[//]: # (1. Clone the repository)
 
-```shell
-make testacc
-```
+[//]: # (1. Enter the repository directory)
+
+[//]: # (1. Build the provider using the Go `install` command:)
+
+[//]: # ()
+[//]: # (```shell)
+
+[//]: # (go install)
+
+[//]: # (```)
+
+[//]: # ()
+[//]: # (## Adding Dependencies)
+
+[//]: # ()
+[//]: # (This provider uses [Go modules]&#40;https://github.com/golang/go/wiki/Modules&#41;.)
+
+[//]: # (Please see the Go documentation for the most up to date information about using Go modules.)
+
+[//]: # ()
+[//]: # (To add a new dependency `github.com/author/dependency` to your Terraform provider:)
+
+[//]: # ()
+[//]: # (```shell)
+
+[//]: # (go get github.com/author/dependency)
+
+[//]: # (go mod tidy)
+
+[//]: # (```)
+
+[//]: # ()
+[//]: # (Then commit the changes to `go.mod` and `go.sum`.)
+
+[//]: # ()
+[//]: # (## Using the provider)
+
+[//]: # ()
+[//]: # (Fill this in for each provider)
+
+[//]: # ()
+[//]: # (## Developing the Provider)
+
+[//]: # ()
+[//]: # (If you wish to work on the provider, you'll first need [Go]&#40;http://www.golang.org&#41; installed on your machine &#40;see [Requirements]&#40;#requirements&#41; above&#41;.)
+
+[//]: # ()
+[//]: # (To compile the provider, run `go install`. This will build the provider and put the provider binary in the `$GOPATH/bin` directory.)
+
+[//]: # ()
+[//]: # (To generate or update documentation, run `go generate`.)
+
+[//]: # ()
+[//]: # (In order to run the full suite of Acceptance tests, run `make testacc`.)
+
+[//]: # ()
+[//]: # (*Note:* Acceptance tests create real resources, and often cost money to run.)
+
+[//]: # ()
+[//]: # (```shell)
+
+[//]: # (make testacc)
+
+[//]: # (```)

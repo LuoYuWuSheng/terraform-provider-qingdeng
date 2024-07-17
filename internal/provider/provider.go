@@ -5,16 +5,18 @@ package provider
 
 import (
 	"context"
-	"github.com/hashicorp-demoapp/hashicups-client-go"
+	"fmt"
 	"github.com/hashicorp/terraform-plugin-framework/datasource"
 	"github.com/hashicorp/terraform-plugin-framework/function"
 	"github.com/hashicorp/terraform-plugin-framework/path"
 	"github.com/hashicorp/terraform-plugin-framework/provider"
 	"github.com/hashicorp/terraform-plugin-framework/provider/schema"
 	"github.com/hashicorp/terraform-plugin-framework/resource"
-	"github.com/hashicorp/terraform-plugin-framework/types"
 	"github.com/hashicorp/terraform-plugin-log/tflog"
+	"math"
 	"os"
+	"strconv"
+	"terraform-provider-relyt/internal/provider/client"
 )
 
 // Ensure RelytProvider satisfies various provider interfaces.
@@ -27,13 +29,6 @@ type RelytProvider struct {
 	// provider is built and ran locally, and "test" when running acceptance
 	// testing.
 	version string
-}
-
-// RelytProviderModel describes the provider data model.
-type RelytProviderModel struct {
-	ApiHost types.String `tfsdk:"api_host"`
-	AuthKey types.String `tfsdk:"auth_key"`
-	RoleId  types.String `tfsdk:"role_id"`
 }
 
 type RelytProviderEnv struct {
@@ -58,17 +53,10 @@ var (
 		detailSuggest: "The provider cannot create the Relyt API client as there is an unknown configuration value for the Relyt Auth EnvKey. " +
 			"Either target apply the source of the value first, set the value statically in the configuration, or use the RELYT_AUTH_KEY environment variable.",
 	}
-	roleIDEnv = RelytProviderEnv{
-		EnvKey:         "RELYT_ROLE_ID",
-		PropertyName:   "role_id",
-		SummarySuggest: "Unknown Relyt Role ID",
-		detailSuggest: "The provider cannot create the Relyt API client as there is an unknown configuration value for the Relyt Relyt Role ID. " +
-			"Either target apply the source of the value first, set the value statically in the configuration, or use the RELYT_ROLE_ID environment variable.",
-	}
 )
 
 func (p *RelytProvider) Metadata(ctx context.Context, req provider.MetadataRequest, resp *provider.MetadataResponse) {
-	resp.TypeName = "qingdeng"
+	resp.TypeName = "relyt"
 	resp.Version = p.version
 }
 
@@ -82,15 +70,26 @@ func (p *RelytProvider) Schema(ctx context.Context, req provider.SchemaRequest, 
 			//	Optional:            true,
 			//},
 			"api_host": schema.StringAttribute{
-				Required: true,
+				Optional:    true,
+				Description: "target api address",
 			},
 			"auth_key": schema.StringAttribute{
-				Optional:  true,
-				Sensitive: true,
+				Optional:    true,
+				Sensitive:   true,
+				Description: "your api auth, Can set by env 'RELYT_AUTH_KEY'",
 			},
-			"role_id": schema.StringAttribute{
-				Optional:  true,
-				Sensitive: true,
+			"role": schema.StringAttribute{
+				Optional:    true,
+				Sensitive:   true,
+				Description: "your role",
+			},
+			"resource_check_timeout": schema.Int64Attribute{
+				Optional:    true,
+				Description: "Timeout second used in wait for create and delete dwsu or dps! Default is 600",
+			},
+			"resource_check_interval": schema.Int64Attribute{
+				Optional:    true,
+				Description: "Interval second used in wait for cycle check!Default is 5",
 			},
 		},
 	}
@@ -138,21 +137,11 @@ func (p *RelytProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		apiHost = data.ApiHost.ValueString()
 	}
 	authKey := os.Getenv(authKeyEnv.EnvKey)
-	if !data.ApiHost.IsNull() {
+	if !data.AuthKey.IsNull() {
 		authKey = data.AuthKey.ValueString()
 	}
 	// If any of the expected configurations are missing, return
 	// errors with provider-specific guidance.
-
-	if apiHost == "" {
-		resp.Diagnostics.AddAttributeError(
-			path.Root(apiHostEnv.PropertyName),
-			"Missing Relyt API Host",
-			"The provider cannot create the Relyt API client as there is a missing or empty value for the Relyt API apiHost. "+
-				"Set the apiHost value in the configuration or use the "+apiHostEnv.EnvKey+" environment variable. "+
-				"If either is already set, ensure the value is not empty.",
-		)
-	}
 
 	if authKey == "" {
 		resp.Diagnostics.AddAttributeError(
@@ -163,6 +152,26 @@ func (p *RelytProvider) Configure(ctx context.Context, req provider.ConfigureReq
 				"If either is already set, ensure the value is not empty.",
 		)
 	}
+	if apiHost == "" {
+		//apiHost的默认值
+		apiHost = "https://api.data.cloud"
+	}
+	resourceWaitTimeout := int64(600)
+	checkInterval := int32(5)
+	if !data.ResourceCheckTimeout.IsNull() {
+		tflog.Info(ctx, "resource check wait isn't null! set value:"+strconv.FormatInt(data.ResourceCheckTimeout.ValueInt64(), 10))
+		resourceWaitTimeout = data.ResourceCheckTimeout.ValueInt64()
+		if resourceWaitTimeout < 500 {
+			resp.Diagnostics.AddAttributeError(path.Root("resource_check_timeout"), "invalid value", "shouldn't less than 500")
+		}
+	}
+	if !data.ResourceCheckInterval.IsNull() {
+		tflog.Info(ctx, "resource check wait isn't null! set value:"+strconv.FormatInt(data.ResourceCheckTimeout.ValueInt64(), 10))
+		if data.ResourceCheckInterval.ValueInt64() < 5 || data.ResourceCheckInterval.ValueInt64() >= math.MaxInt32 {
+			resp.Diagnostics.AddAttributeError(path.Root("resource_check_interval"), "invalid value", "should be grater than 5")
+		}
+		checkInterval = int32(data.ResourceCheckInterval.ValueInt64())
+	}
 
 	if resp.Diagnostics.HasError() {
 		return
@@ -171,9 +180,17 @@ func (p *RelytProvider) Configure(ctx context.Context, req provider.ConfigureReq
 	// Example client configuration for data sources and resources
 
 	// Create a new Relyt client using the configuration values
-	tflog.Info(ctx, "host:"+apiHost+" auth:"+authKey+"role_id"+data.RoleId.ValueString())
-	roleId := data.RoleId.ValueString()
-	hashiCupsClient, err := hashicups.NewClient(&apiHost, &authKey, &roleId)
+	tflog.Info(ctx, fmt.Sprintf(" host: %s auth: %s, role: %s  check timeout: %d interval: %d",
+		apiHost, authKey, data.Role.ValueString(), resourceWaitTimeout, checkInterval))
+	roleId := data.Role.ValueString()
+	relytClient, err := client.NewRelytClient(client.RelytClientConfig{
+		ApiHost:       apiHost,
+		AuthKey:       authKey,
+		Role:          roleId,
+		CheckTimeOut:  resourceWaitTimeout,
+		CheckInterval: checkInterval,
+	})
+	//relytClient.RelytClientConfig.RegionApi = data.RegionApi.ValueString()
 	if err != nil {
 		resp.Diagnostics.AddError(
 			"Unable to Create Relyt API Client",
@@ -183,30 +200,29 @@ func (p *RelytProvider) Configure(ctx context.Context, req provider.ConfigureReq
 		)
 		return
 	}
-	//client := http.DefaultClient
-	client := hashiCupsClient
-	resp.DataSourceData = client
-	resp.ResourceData = client
+	resp.DataSourceData = &relytClient
+	resp.ResourceData = &relytClient
 }
 
 func (p *RelytProvider) Resources(ctx context.Context) []func() resource.Resource {
 	return []func() resource.Resource{
-		NewOrderResource,
+		NewdwUserResource,
 		NewDpsResource,
+		NewDwsuResource,
+		//NewTestResource,
 	}
 }
 
 func (p *RelytProvider) DataSources(ctx context.Context) []func() datasource.DataSource {
 	tflog.Info(ctx, "===== datasource get ")
 	return []func() datasource.DataSource{
-		//NewExampleDataSource,
-		NewCoffeesDataSource,
+		NewServiceAccountDataSource,
 	}
 }
 
 func (p *RelytProvider) Functions(ctx context.Context) []func() function.Function {
 	return []func() function.Function{
-		NewExampleFunction,
+		//NewExampleFunction,
 	}
 }
 
